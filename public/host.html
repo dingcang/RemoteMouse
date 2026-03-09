@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Remote Mouse Host</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell host-shell">
+      <section class="hero card">
+        <div>
+          <p class="eyebrow">Host Dashboard</p>
+          <h1>配对确认台</h1>
+          <p class="lead">只有本机能访问这个页面。手机扫码后先输入房间码，再由你确认是否允许控制。</p>
+        </div>
+        <div class="connection">
+          <div>
+            <span class="label">控制状态</span>
+            <strong id="hostStatus">连接中...</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="qr-section card">
+        <div>
+          <span class="label">扫码入口</span>
+          <p id="hostBaseUrl" class="base-url">正在生成...</p>
+          <p class="lead small">房间码：<strong id="pairCode">------</strong></p>
+        </div>
+        <img id="hostQrImage" class="qr-image" alt="Host QR code" />
+      </section>
+
+      <section class="card host-grid">
+        <div>
+          <span class="label">待确认设备</span>
+          <div id="pendingList" class="device-list"></div>
+        </div>
+        <div>
+          <span class="label">已授权设备</span>
+          <div id="approvedList" class="device-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/host.js" defer></script>
+  </body>
+</html>

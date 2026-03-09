@@ -1,0 +1,17 @@
+{
+  "name": "remote-mouse",
+  "version": "1.0.0",
+  "description": "LAN remote mouse and keyboard controller with QR entry",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.3",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.1"
+  }
+}
