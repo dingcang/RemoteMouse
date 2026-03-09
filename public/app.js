@@ -3,6 +3,10 @@ const baseUrl = document.getElementById("baseUrl");
 const qrImage = document.getElementById("qrImage");
 const touchpad = document.getElementById("touchpad");
 const sensitivity = document.getElementById("sensitivity");
+const sensitivityValue = document.getElementById("sensitivityValue");
+const sensitivitySettingValue = document.getElementById("sensitivitySettingValue");
+const touchpadSize = document.getElementById("touchpadSize");
+const touchpadSizeValue = document.getElementById("touchpadSizeValue");
 const textInput = document.getElementById("textInput");
 const reconnectButton = document.getElementById("reconnectButton");
 const sendTextButton = document.getElementById("sendText");
@@ -11,7 +15,12 @@ const deviceNameInput = document.getElementById("deviceName");
 const pairButton = document.getElementById("pairButton");
 const pairState = document.getElementById("pairState");
 const controlPanels = Array.from(document.querySelectorAll("[data-control-panel]"));
+const tabButtons = Array.from(document.querySelectorAll("[data-tab-button]"));
+const tabPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
+
 const trustedTokenKey = "remote-mouse-trusted-token";
+const sensitivityKey = "remote-mouse-sensitivity";
+const touchpadSizeKey = "remote-mouse-touchpad-size";
 
 let socket;
 let wsUrl = "";
@@ -29,7 +38,9 @@ async function bootstrap() {
   baseUrl.textContent = session.baseUrl;
   qrImage.src = session.qrDataUrl;
   deviceNameInput.value = getDefaultDeviceName();
+  applyStoredSettings();
   lockControls(true);
+  setActiveTab(authorized ? "touch" : "settings");
   connect();
 }
 
@@ -55,6 +66,7 @@ function connect() {
     lockControls(true);
     if (!authorized) {
       setPairState("连接已断开，请稍后重试");
+      setActiveTab("settings");
     }
     setTimeout(() => {
       if (!socket || socket.readyState === WebSocket.CLOSED) {
@@ -79,16 +91,19 @@ function handleSocketMessage(event) {
       lockControls(false);
       setStatus("已连接并授权");
       setPairState(payload.remembered ? "已识别为已授权设备" : "已授权，可以开始控制");
+      setActiveTab("touch");
       return;
     case "pair-pending":
       authorized = false;
       lockControls(true);
       setPairState("已提交，等待电脑端确认");
+      setActiveTab("settings");
       return;
     case "pair-rejected":
       authorized = false;
       lockControls(true);
       setPairState("配对被拒绝，请重新申请");
+      setActiveTab("settings");
       return;
     case "pair-revoked":
       authorized = false;
@@ -97,9 +112,11 @@ function handleSocketMessage(event) {
       lockControls(true);
       setStatus("授权已撤销");
       setPairState("电脑端已撤销授权，请重新配对");
+      setActiveTab("settings");
       return;
     case "error":
       setPairState(payload.message);
+      setActiveTab("settings");
       return;
     default:
       return;
@@ -120,6 +137,44 @@ function setPairState(value) {
   pairState.textContent = value;
 }
 
+function setActiveTab(tabName) {
+  for (const button of tabButtons) {
+    button.classList.toggle("active", button.dataset.tabButton === tabName);
+  }
+
+  for (const panel of tabPanels) {
+    panel.classList.toggle("active", panel.dataset.tabPanel === tabName);
+  }
+}
+
+function applyStoredSettings() {
+  const storedSensitivity = localStorage.getItem(sensitivityKey);
+  const storedTouchpadSize = localStorage.getItem(touchpadSizeKey);
+
+  if (storedSensitivity) {
+    sensitivity.value = storedSensitivity;
+  }
+
+  if (storedTouchpadSize) {
+    touchpadSize.value = storedTouchpadSize;
+  }
+
+  updateSensitivityDisplay();
+  updateTouchpadSizeDisplay();
+}
+
+function updateSensitivityDisplay() {
+  const value = `${Number(sensitivity.value).toFixed(1)}x`;
+  sensitivityValue.textContent = value;
+  sensitivitySettingValue.textContent = value;
+}
+
+function updateTouchpadSizeDisplay() {
+  const value = `${touchpadSize.value}vh`;
+  touchpadSizeValue.textContent = value;
+  document.documentElement.style.setProperty("--touchpad-height", value);
+}
+
 function send(payload) {
   if (!authorized) {
     return;
@@ -129,6 +184,22 @@ function send(payload) {
     socket.send(JSON.stringify(payload));
   }
 }
+
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setActiveTab(button.dataset.tabButton);
+  });
+});
+
+sensitivity.addEventListener("input", () => {
+  localStorage.setItem(sensitivityKey, sensitivity.value);
+  updateSensitivityDisplay();
+});
+
+touchpadSize.addEventListener("input", () => {
+  localStorage.setItem(touchpadSizeKey, touchpadSize.value);
+  updateTouchpadSizeDisplay();
+});
 
 pairButton.addEventListener("click", () => {
   const code = pairCodeInput.value.trim();
@@ -145,6 +216,7 @@ pairButton.addEventListener("click", () => {
 
   authorized = false;
   lockControls(true);
+  setActiveTab("settings");
   socket.send(JSON.stringify({ type: "pair-request", code, deviceName }));
 });
 
