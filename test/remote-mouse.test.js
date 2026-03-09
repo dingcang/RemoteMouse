@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import fs from "node:fs";
 
 import { WebSocket } from "ws";
 
@@ -61,11 +64,13 @@ test("absolute mouse moves are clamped to screen bounds", async () => {
 });
 
 test("unauthorized clients cannot send control actions", async () => {
+  const trustedStorePath = createTrustedStorePath("unauthorized");
   const runtime = createRemoteMouseServer({
     port: 0,
     silent: true,
     pairCode: "654321",
     hostProvider: () => "127.0.0.1",
+    trustedStorePath,
     controlApi: {
       async moveRelative() {
         throw new Error("should not be called");
@@ -88,16 +93,19 @@ test("unauthorized clients cannot send control actions", async () => {
     ws.close();
   } finally {
     await runtime.close();
+    removeTrustedStore(trustedStorePath);
   }
 });
 
 test("paired clients can be approved through the host dashboard socket", async () => {
   const receivedActions = [];
+  const trustedStorePath = createTrustedStorePath("approve");
   const runtime = createRemoteMouseServer({
     port: 0,
     silent: true,
     pairCode: "123456",
     hostProvider: () => "127.0.0.1",
+    trustedStorePath,
     controlApi: {
       async moveRelative(dx, dy) {
         receivedActions.push([dx, dy]);
@@ -137,16 +145,19 @@ test("paired clients can be approved through the host dashboard socket", async (
     phone.close();
   } finally {
     await runtime.close();
+    removeTrustedStore(trustedStorePath);
   }
 });
 
 test("host can revoke an approved device", async () => {
   const receivedActions = [];
+  const trustedStorePath = createTrustedStorePath("revoke");
   const runtime = createRemoteMouseServer({
     port: 0,
     silent: true,
     pairCode: "222222",
     hostProvider: () => "127.0.0.1",
+    trustedStorePath,
     controlApi: {
       async moveRelative(dx, dy) {
         receivedActions.push([dx, dy]);
@@ -191,6 +202,66 @@ test("host can revoke an approved device", async () => {
     phone.close();
   } finally {
     await runtime.close();
+    removeTrustedStore(trustedStorePath);
+  }
+});
+
+test("remembered devices are auto-authorized on reconnect", async () => {
+  const trustedStorePath = createTrustedStorePath("remembered");
+  const receivedActions = [];
+  const runtime = createRemoteMouseServer({
+    port: 0,
+    silent: true,
+    pairCode: "333333",
+    hostProvider: () => "127.0.0.1",
+    trustedStorePath,
+    controlApi: {
+      async moveRelative(dx, dy) {
+        receivedActions.push([dx, dy]);
+      },
+      async moveAbsolute() {},
+      async click() {},
+      async scroll() {},
+      async type() {},
+      async tapKey() {}
+    }
+  });
+
+  await runtime.listen();
+  const port = runtime.getPort();
+
+  try {
+    const host = await openSocket(`ws://127.0.0.1:${port}/ws`);
+    const phone = await openSocket(`ws://127.0.0.1:${port}/ws`);
+
+    await sendAndWaitFor(host, { type: "host-register" }, "host-state");
+    phone.send(JSON.stringify({ type: "device-register", deviceName: "Remembered Phone", trustedToken: "" }));
+    await sendAndWaitFor(phone, { type: "pair-request", code: "333333", deviceName: "Remembered Phone" }, "pair-pending");
+    const pendingState = await waitForType(host, "host-state");
+
+    const [authorizedPayload] = await Promise.all([
+      waitForType(phone, "authorized"),
+      sendAndWaitFor(host, { type: "pair-approve", clientId: pendingState.pending[0].id }, "host-state")
+    ]);
+
+    const trustedToken = authorizedPayload.trustedToken;
+    assert.ok(trustedToken);
+
+    phone.close();
+
+    const returningPhone = await openSocket(`ws://127.0.0.1:${port}/ws`);
+    const rememberedAuth = sendAndWaitFor(returningPhone, { type: "device-register", deviceName: "Remembered Phone", trustedToken }, "authorized");
+    const rememberedPayload = await rememberedAuth;
+    assert.equal(rememberedPayload.remembered, true);
+    const ack = await sendAndWaitFor(returningPhone, { type: "move", dx: 11, dy: 12 }, "ack");
+    assert.equal(ack.action, "move");
+    assert.deepEqual(receivedActions, [[11, 12]]);
+
+    host.close();
+    returningPhone.close();
+  } finally {
+    await runtime.close();
+    removeTrustedStore(trustedStorePath);
   }
 });
 
@@ -237,4 +308,18 @@ async function sendAndWaitFor(ws, payload, type) {
   const waiting = waitForType(ws, type);
   ws.send(JSON.stringify(payload));
   return waiting;
+}
+
+function createTrustedStorePath(name) {
+  return path.join(os.tmpdir(), `remote-mouse-${name}-${process.pid}-${Date.now()}.json`);
+}
+
+function removeTrustedStore(filePath) {
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
 }

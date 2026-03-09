@@ -2,6 +2,7 @@ import os from "node:os";
 import http from "node:http";
 import path from "node:path";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import express from "express";
@@ -77,6 +78,8 @@ export function createRemoteMouseServer(options = {}) {
   const pairCode = String(options.pairCode ?? createPairCode());
   const hostProvider = options.hostProvider ?? getLanAddress;
   const controlApi = options.controlApi ?? createControlApi();
+  const trustedStorePath = options.trustedStorePath ?? path.join(__dirname, "trusted-devices.json");
+  const trustedDevices = loadTrustedDevices(trustedStorePath);
   let actualPort = port;
 
   const app = express();
@@ -123,7 +126,8 @@ export function createRemoteMouseServer(options = {}) {
       pairCode,
       qrDataUrl,
       pending: getPendingClients(clients),
-      approved: getApprovedClients(clients)
+      approved: getApprovedClients(clients),
+      trusted: getTrustedDevices(trustedDevices)
     });
   });
 
@@ -135,7 +139,8 @@ export function createRemoteMouseServer(options = {}) {
       type: "host-state",
       pairCode,
       pending: getPendingClients(clients),
-      approved: getApprovedClients(clients)
+      approved: getApprovedClients(clients),
+      trusted: getTrustedDevices(trustedDevices)
     });
 
     for (const socket of hostSockets) {
@@ -154,7 +159,8 @@ export function createRemoteMouseServer(options = {}) {
       approved: false,
       pending: false,
       deviceName: `Phone-${clientId.slice(0, 4)}`,
-      isLocal: isLocalRequest(req.socket.remoteAddress)
+      isLocal: isLocalRequest(req.socket.remoteAddress),
+      trustedToken: ""
     };
 
     clients.set(clientId, clientState);
@@ -164,7 +170,7 @@ export function createRemoteMouseServer(options = {}) {
     socket.on("message", async (raw) => {
       try {
         const payload = JSON.parse(String(raw));
-        await handleMessage({ clientState, payload, clients, hostSockets, pairCode, controlApi, broadcastHostState });
+        await handleMessage({ clientState, payload, clients, hostSockets, pairCode, controlApi, broadcastHostState, trustedDevices, trustedStorePath });
       } catch (error) {
         socket.send(JSON.stringify({
           type: "error",
@@ -233,9 +239,30 @@ export function createRemoteMouseServer(options = {}) {
 }
 
 export async function handleMessage(context) {
-  const { clientState, payload, clients, hostSockets, pairCode, controlApi, broadcastHostState } = context;
+  const { clientState, payload, clients, hostSockets, pairCode, controlApi, broadcastHostState, trustedDevices, trustedStorePath } = context;
 
   switch (payload.type) {
+    case "device-register": {
+      clientState.deviceName = sanitizeName(payload.deviceName) || clientState.deviceName;
+      clientState.trustedToken = String(payload.trustedToken || "").trim();
+
+      if (clientState.trustedToken && trustedDevices.has(clientState.trustedToken)) {
+        const trustedDevice = trustedDevices.get(clientState.trustedToken);
+        trustedDevice.deviceName = clientState.deviceName;
+        trustedDevice.lastSeenAt = new Date().toISOString();
+        persistTrustedDevices(trustedStorePath, trustedDevices);
+        clientState.approved = true;
+        clientState.pending = false;
+        clientState.socket.send(JSON.stringify({
+          type: "authorized",
+          remembered: true,
+          trustedToken: clientState.trustedToken
+        }));
+        broadcastHostState();
+      }
+
+      return;
+    }
     case "host-register": {
       if (!clientState.isLocal) {
         throw new Error("Host dashboard is only available locally");
@@ -247,7 +274,8 @@ export async function handleMessage(context) {
         type: "host-state",
         pairCode,
         pending: getPendingClients(clients),
-        approved: getApprovedClients(clients)
+        approved: getApprovedClients(clients),
+        trusted: getTrustedDevices(trustedDevices)
       }));
       return;
     }
@@ -273,7 +301,15 @@ export async function handleMessage(context) {
 
       target.pending = false;
       target.approved = true;
-      target.socket.send(JSON.stringify({ type: "authorized" }));
+      const trustedToken = target.trustedToken || crypto.randomUUID();
+      target.trustedToken = trustedToken;
+      trustedDevices.set(trustedToken, {
+        trustedToken,
+        deviceName: target.deviceName,
+        lastSeenAt: new Date().toISOString()
+      });
+      persistTrustedDevices(trustedStorePath, trustedDevices);
+      target.socket.send(JSON.stringify({ type: "authorized", trustedToken }));
       broadcastHostState();
       return;
     }
@@ -286,6 +322,10 @@ export async function handleMessage(context) {
 
       target.pending = false;
       target.approved = false;
+      if (target.trustedToken) {
+        trustedDevices.delete(target.trustedToken);
+        persistTrustedDevices(trustedStorePath, trustedDevices);
+      }
       target.socket.send(JSON.stringify({ type: "pair-rejected" }));
       broadcastHostState();
       return;
@@ -299,6 +339,10 @@ export async function handleMessage(context) {
 
       target.pending = false;
       target.approved = false;
+      if (target.trustedToken) {
+        trustedDevices.delete(target.trustedToken);
+        persistTrustedDevices(trustedStorePath, trustedDevices);
+      }
       target.socket.send(JSON.stringify({ type: "pair-revoked" }));
       broadcastHostState();
       return;
@@ -397,6 +441,32 @@ function getApprovedClients(clients) {
   return Array.from(clients.values())
     .filter((client) => client.role === "controller" && client.approved)
     .map((client) => ({ id: client.id, deviceName: client.deviceName }));
+}
+
+function getTrustedDevices(trustedDevices) {
+  return Array.from(trustedDevices.values()).map((device) => ({
+    trustedToken: device.trustedToken,
+    deviceName: device.deviceName,
+    lastSeenAt: device.lastSeenAt
+  }));
+}
+
+function loadTrustedDevices(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return new Map(parsed.map((device) => [device.trustedToken, device]));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return new Map();
+    }
+
+    return new Map();
+  }
+}
+
+function persistTrustedDevices(filePath, trustedDevices) {
+  fs.writeFileSync(filePath, `${JSON.stringify(Array.from(trustedDevices.values()), null, 2)}\n`, "utf8");
 }
 
 function isLocalRequest(remoteAddress) {

@@ -11,6 +11,7 @@ const deviceNameInput = document.getElementById("deviceName");
 const pairButton = document.getElementById("pairButton");
 const pairState = document.getElementById("pairState");
 const controlPanels = Array.from(document.querySelectorAll("[data-control-panel]"));
+const trustedTokenKey = "remote-mouse-trusted-token";
 
 let socket;
 let wsUrl = "";
@@ -18,6 +19,7 @@ let lastPoint = null;
 let lastTap = 0;
 let lastTouchCenter = null;
 let authorized = false;
+let trustedToken = localStorage.getItem(trustedTokenKey) || "";
 
 bootstrap();
 
@@ -40,7 +42,12 @@ function connect() {
 
   socket.addEventListener("open", () => {
     setStatus("已连接，等待配对");
-    setPairState(authorized ? "已配对" : "请输入房间码");
+    setPairState(trustedToken ? "正在验证已授权设备" : authorized ? "已配对" : "请输入房间码");
+    socket.send(JSON.stringify({
+      type: "device-register",
+      deviceName: deviceNameInput.value.trim() || getDefaultDeviceName(),
+      trustedToken
+    }));
   });
 
   socket.addEventListener("close", () => {
@@ -65,9 +72,13 @@ function handleSocketMessage(event) {
   switch (payload.type) {
     case "authorized":
       authorized = true;
+      if (payload.trustedToken) {
+        trustedToken = payload.trustedToken;
+        localStorage.setItem(trustedTokenKey, trustedToken);
+      }
       lockControls(false);
       setStatus("已连接并授权");
-      setPairState("已授权，可以开始控制");
+      setPairState(payload.remembered ? "已识别为已授权设备" : "已授权，可以开始控制");
       return;
     case "pair-pending":
       authorized = false;
@@ -81,6 +92,8 @@ function handleSocketMessage(event) {
       return;
     case "pair-revoked":
       authorized = false;
+      trustedToken = "";
+      localStorage.removeItem(trustedTokenKey);
       lockControls(true);
       setStatus("授权已撤销");
       setPairState("电脑端已撤销授权，请重新配对");
