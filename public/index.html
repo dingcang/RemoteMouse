@@ -30,18 +30,11 @@
 
       <section class="tab-panel active" data-tab-panel="touch">
         <section class="pad card control-panel locked" data-control-panel>
-          <div class="pad-head">
-            <div>
-              <span class="label">触控区</span>
-              <p>单指移动，双击快速确认，双指上下滑动滚轮。</p>
-            </div>
-            <div class="stat-chip">
-              <span>灵敏度</span>
-              <strong id="sensitivityValue">1.3x</strong>
-            </div>
-          </div>
           <div id="touchpad" class="touchpad">
             <div class="touchpad-grid"></div>
+            <div class="stat-chip stat-chip-floating">
+              <strong id="sensitivityValue">1.3x</strong>
+            </div>
             <span>Touch / Drag</span>
           </div>
           <div class="actions">
@@ -54,12 +47,6 @@
 
       <section class="tab-panel" data-tab-panel="input">
         <section class="keyboard card control-panel locked" data-control-panel>
-          <div class="pad-head">
-            <div>
-              <span class="label">键盘输入</span>
-              <p>输入后发送到电脑当前焦点窗口。</p>
-            </div>
-          </div>
           <textarea id="textInput" rows="4" placeholder="输入文字，然后发送到电脑..."></textarea>
           <div class="actions compact">
             <button id="sendText">发送文本</button>
