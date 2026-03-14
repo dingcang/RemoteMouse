@@ -9,7 +9,7 @@ Remote Mouse starts a local web server, shows a QR code in the terminal, and let
 ## Features
 
 - QR-code entry for fast phone access on the local network
-- Mobile touchpad UI with adjustable sensitivity, left click, right click, double click, and two-axis scroll gestures
+- Mobile touchpad UI with adjustable sensitivity, left click, right click, double click, two-axis scroll gestures, and fullscreen touch lock
 - Text input and quick keys for `Enter`, `Tab`, and `Backspace`
 - 6-digit room code plus local host approval before control is allowed
 - Local-only host dashboard for approving, rejecting, and revoking devices
@@ -81,6 +81,8 @@ From the host dashboard, click `撤销授权` next to any approved device.
 - Single-finger drag: move cursor
 - Double tap: double click
 - Two-finger move: axis-locked scroll based on the dominant direction
+- Fullscreen mode: expand the touchpad to the full screen
+- Lock icon: disable or enable touch interactions in fullscreen mode
 - Buttons: left click, right click, double click
 - Text box: send text to the current focused app on the host
 
@@ -88,8 +90,10 @@ From the host dashboard, click `撤销授权` next to any approved device.
 
 - Pointer sensitivity range: `0.2x` to `4.0x`
 - Touch area height is stored per device in `localStorage`
+- Fullscreen layout state is stored in `localStorage` and restored on reload
 - Two-finger scroll uses the same sensitivity multiplier as single-finger pointer movement
 - Two-finger scroll is axis-locked: horizontal wins when `|dx| > |dy|`, otherwise vertical scroll is sent
+- In fullscreen mode, the lock icon disables touchpad interactions until unlocked again
 
 ## Testing
 

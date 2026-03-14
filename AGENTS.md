@@ -9,7 +9,7 @@ This file gives agentic coding assistants the project-specific context needed to
 - Main entry point: `server.js`
 - Frontend: static HTML/CSS/JS in `public/`
 - Tests: Node built-in test runner in `test/`
-- Primary behavior: serve a LAN remote mouse UI, pair devices over WebSocket, and control host mouse/keyboard through `@nut-tree-fork/nut-js`, including axis-locked two-finger scrolling
+- Primary behavior: serve a LAN remote mouse UI, pair devices over WebSocket, and control host mouse/keyboard through `@nut-tree-fork/nut-js`, including axis-locked two-finger scrolling and fullscreen touch locking
 
 ## Repository Layout
 
@@ -176,7 +176,7 @@ node --check public/host.js
 - Keep frontend code framework-free and DOM-driven.
 - Prefer `const` DOM references at the top of the file.
 - Store user preferences in `localStorage` only for device-local UX settings and trusted-device tokens.
-- Current device-local settings include pointer sensitivity (`0.2x` to `4.0x`) and touch area height.
+- Current device-local settings include pointer sensitivity (`0.2x` to `4.0x`), touch area height, and fullscreen layout state.
 - Respect the current auth-aware navigation behavior:
   - authorized devices default to the touch tab
   - unauthorized devices default to the settings tab
@@ -187,6 +187,7 @@ node --check public/host.js
   - double tap triggers double click
   - two-finger gesture sends axis-locked scroll using the dominant direction
   - two-finger scroll reuses the current sensitivity multiplier
+  - fullscreen mode shows a lock icon that can disable touchpad interactions
 
 ## CSS Conventions
 

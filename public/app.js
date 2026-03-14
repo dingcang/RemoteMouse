@@ -2,6 +2,8 @@ const statusText = document.getElementById("statusText");
 const baseUrl = document.getElementById("baseUrl");
 const qrImage = document.getElementById("qrImage");
 const touchpad = document.getElementById("touchpad");
+const fullscreenToggle = document.getElementById("fullscreenToggle");
+const gravityToggle = document.getElementById("gravityToggle");
 const sensitivity = document.getElementById("sensitivity");
 const sensitivityValue = document.getElementById("sensitivityValue");
 const sensitivitySettingValue = document.getElementById("sensitivitySettingValue");
@@ -17,10 +19,12 @@ const pairState = document.getElementById("pairState");
 const controlPanels = Array.from(document.querySelectorAll("[data-control-panel]"));
 const tabButtons = Array.from(document.querySelectorAll("[data-tab-button]"));
 const tabPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
+const touchPanel = document.querySelector('[data-tab-panel="touch"]');
 
 const trustedTokenKey = "remote-mouse-trusted-token";
 const sensitivityKey = "remote-mouse-sensitivity";
 const touchpadSizeKey = "remote-mouse-touchpad-size";
+const fullscreenStateKey = "remote-mouse-fullscreen";
 const sensitivityMin = 0.2;
 const sensitivityMax = 4;
 const sensitivityDefault = 1.3;
@@ -36,6 +40,8 @@ let lastTouchCenter = null;
 let authorized = false;
 let trustedToken = localStorage.getItem(trustedTokenKey) || "";
 let pointerRemainder = { x: 0, y: 0 };
+let gravityLocked = false;
+let fullscreenFallbackActive = localStorage.getItem(fullscreenStateKey) === "true";
 
 bootstrap();
 
@@ -46,6 +52,8 @@ async function bootstrap() {
   qrImage.src = session.qrDataUrl;
   deviceNameInput.value = getDefaultDeviceName();
   applyStoredSettings();
+  updateFullscreenState();
+  updateGravityControls();
   lockControls(true);
   setActiveTab(authorized ? "touch" : "settings");
   connect();
@@ -185,6 +193,119 @@ function updateTouchpadSizeDisplay() {
   document.documentElement.style.setProperty("--touchpad-height", value);
 }
 
+function updateFullscreenState() {
+  const fullscreenActive = isTouchPanelFullscreen();
+  document.body.classList.toggle("touch-fullscreen", fullscreenActive);
+  localStorage.setItem(fullscreenStateKey, String(fullscreenActive));
+  fullscreenToggle.classList.toggle("active", fullscreenActive);
+  fullscreenToggle.setAttribute("aria-label", fullscreenActive ? "退出全屏" : "进入全屏");
+  fullscreenToggle.title = fullscreenActive ? "退出全屏" : "进入全屏";
+
+  if (!fullscreenActive && gravityLocked) {
+    unlockGravity();
+  }
+
+  updateGravityControls();
+}
+
+function updateGravityControls() {
+  const fullscreenActive = isTouchPanelFullscreen();
+  gravityToggle.disabled = !fullscreenActive;
+  gravityToggle.classList.toggle("active", gravityLocked && fullscreenActive);
+  gravityToggle.setAttribute("aria-label", gravityLocked ? "解锁触控区" : "锁定触控区");
+  gravityToggle.title = gravityLocked ? "解锁触控区" : "锁定触控区";
+  touchpad.classList.toggle("touchpad-locked", gravityLocked && fullscreenActive);
+}
+
+function isTouchPanelFullscreen() {
+  return fullscreenFallbackActive
+    || document.fullscreenElement === touchPanel
+    || document.webkitFullscreenElement === touchPanel;
+}
+
+async function toggleFullscreen() {
+  if (isTouchPanelFullscreen()) {
+    await exitFullscreen();
+    return;
+  }
+
+  await enterFullscreen();
+}
+
+async function enterFullscreen() {
+  try {
+    if (touchPanel.requestFullscreen) {
+      await touchPanel.requestFullscreen();
+      fullscreenFallbackActive = false;
+      updateFullscreenState();
+      return;
+    }
+
+    if (touchPanel.webkitRequestFullscreen) {
+      touchPanel.webkitRequestFullscreen();
+      fullscreenFallbackActive = false;
+      updateFullscreenState();
+      return;
+    }
+  } catch (_error) {
+    fullscreenToggle.title = "当前浏览器不支持原生全屏，已切换为全屏布局";
+  }
+
+  fullscreenFallbackActive = true;
+  updateFullscreenState();
+  updateGravityControls();
+}
+
+async function exitFullscreen() {
+  try {
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+      fullscreenFallbackActive = false;
+      updateFullscreenState();
+      return;
+    }
+
+    if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+      fullscreenFallbackActive = false;
+      updateFullscreenState();
+      return;
+    }
+  } catch (_error) {
+    fullscreenToggle.title = "已退出原生全屏，保留布局回退";
+  }
+
+  fullscreenFallbackActive = false;
+  updateFullscreenState();
+  updateGravityControls();
+}
+
+async function toggleGravityLock() {
+  if (!isTouchPanelFullscreen()) {
+    return;
+  }
+
+  if (gravityLocked) {
+    unlockGravity();
+    return;
+  }
+
+  lockGravity();
+}
+
+function unlockGravity() {
+  gravityLocked = false;
+  updateGravityControls();
+}
+
+function lockGravity() {
+  gravityLocked = true;
+  lastPoint = null;
+  lastTouchCenter = null;
+  pointerRemainder = { x: 0, y: 0 };
+  updateGravityControls();
+}
+
 function getSensitivityScale() {
   return getClampedNumber(sensitivity.value, sensitivityMin, sensitivityMax, sensitivityDefault);
 }
@@ -203,7 +324,7 @@ function getClampedNumber(value, min, max, fallback) {
 }
 
 function send(payload) {
-  if (!authorized) {
+  if (!authorized || isTouchpadInteractionLocked()) {
     return;
   }
 
@@ -227,6 +348,10 @@ function sendMove(dx, dy, remainder = pointerRemainder) {
   }
 
   send({ type: "move", dx: nextDx, dy: nextDy });
+}
+
+function isTouchpadInteractionLocked() {
+  return gravityLocked && isTouchPanelFullscreen();
 }
 
 function takeWholePixels(value) {
@@ -277,6 +402,10 @@ pairButton.addEventListener("click", () => {
 });
 
 touchpad.addEventListener("pointerdown", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   if (event.pointerType === "touch") {
     return;
   }
@@ -286,6 +415,10 @@ touchpad.addEventListener("pointerdown", (event) => {
 });
 
 touchpad.addEventListener("pointermove", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   if (event.pointerType === "touch") {
     return;
   }
@@ -302,6 +435,10 @@ touchpad.addEventListener("pointermove", (event) => {
 });
 
 touchpad.addEventListener("pointerup", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   if (event.pointerType === "touch") {
     return;
   }
@@ -316,6 +453,10 @@ touchpad.addEventListener("pointerup", (event) => {
 });
 
 touchpad.addEventListener("touchstart", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   event.preventDefault();
   if (event.touches.length === 1) {
     const touch = event.touches[0];
@@ -331,6 +472,10 @@ touchpad.addEventListener("touchstart", (event) => {
 }, { passive: false });
 
 touchpad.addEventListener("touchmove", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   event.preventDefault();
   if (event.touches.length === 1 && lastPoint) {
     const touch = event.touches[0];
@@ -348,18 +493,21 @@ touchpad.addEventListener("touchmove", (event) => {
       const scale = getSensitivityScale();
       const dx = (center.x - lastTouchCenter.x) * scale;
       const dy = (center.y - lastTouchCenter.y) * scale;
-
-      if (Math.abs(dx) > Math.abs(dy)) {
-        send({ type: "scroll", dx: Math.round(dx * 1.6), dy: 0 });
-      } else {
-        send({ type: "scroll", dx: 0, dy: Math.round(dy * 1.6) });
-      }
+      send({
+        type: "scroll",
+        dx: Math.abs(dx) > Math.abs(dy) ? Math.round(dx * 1.6) : 0,
+        dy: Math.abs(dx) > Math.abs(dy) ? 0 : Math.round(dy * 1.6)
+      });
     }
     lastTouchCenter = center;
   }
 }, { passive: false });
 
 touchpad.addEventListener("touchend", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   if (event.touches.length === 0) {
     lastPoint = null;
     lastTouchCenter = null;
@@ -367,6 +515,10 @@ touchpad.addEventListener("touchend", (event) => {
 });
 
 touchpad.addEventListener("wheel", (event) => {
+  if (isTouchpadInteractionLocked()) {
+    return;
+  }
+
   event.preventDefault();
   send({ type: "scroll", dy: Math.round(event.deltaY / 3) });
 }, { passive: false });
@@ -397,6 +549,18 @@ sendTextButton.addEventListener("click", () => {
 });
 
 reconnectButton.addEventListener("click", connect);
+fullscreenToggle.addEventListener("click", toggleFullscreen);
+gravityToggle.addEventListener("click", toggleGravityLock);
+
+document.addEventListener("fullscreenchange", () => {
+  updateFullscreenState();
+  updateGravityControls();
+});
+
+document.addEventListener("webkitfullscreenchange", () => {
+  updateFullscreenState();
+  updateGravityControls();
+});
 
 function getTouchCenter(touches) {
   return {

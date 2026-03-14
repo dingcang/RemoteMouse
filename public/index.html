@@ -29,6 +29,12 @@
       </section>
 
       <section class="tab-panel active" data-tab-panel="touch">
+        <button id="fullscreenToggle" class="icon-button icon-button-fullscreen ghost" type="button" aria-label="切换全屏" title="切换全屏">
+          <span class="icon icon-fullscreen" aria-hidden="true"></span>
+        </button>
+        <button id="gravityToggle" class="icon-button icon-button-gravity ghost" type="button" aria-label="锁定触控区" title="锁定触控区">
+          <span class="icon icon-lock" aria-hidden="true"></span>
+        </button>
         <section class="pad card control-panel locked" data-control-panel>
           <div id="touchpad" class="touchpad">
             <div class="touchpad-grid"></div>
@@ -89,7 +95,7 @@
           <div class="pad-head">
             <div>
               <span class="label">控制设置</span>
-              <p>灵敏度和触控范围会保存在当前设备里，灵敏度支持 0.2x - 4.0x。</p>
+              <p>灵敏度和触控范围会保存在当前设备里，灵敏度支持 0.2x - 4.0x；全屏模式下可用重力锁控制方向感应。</p>
             </div>
           </div>
           <div class="settings-grid">
