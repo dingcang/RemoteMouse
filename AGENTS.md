@@ -9,7 +9,7 @@ This file gives agentic coding assistants the project-specific context needed to
 - Main entry point: `server.js`
 - Frontend: static HTML/CSS/JS in `public/`
 - Tests: Node built-in test runner in `test/`
-- Primary behavior: serve a LAN remote mouse UI, pair devices over WebSocket, and control host mouse/keyboard through `@nut-tree-fork/nut-js`
+- Primary behavior: serve a LAN remote mouse UI, pair devices over WebSocket, and control host mouse/keyboard through `@nut-tree-fork/nut-js`, including axis-locked two-finger scrolling
 
 ## Repository Layout
 
@@ -176,11 +176,17 @@ node --check public/host.js
 - Keep frontend code framework-free and DOM-driven.
 - Prefer `const` DOM references at the top of the file.
 - Store user preferences in `localStorage` only for device-local UX settings and trusted-device tokens.
+- Current device-local settings include pointer sensitivity (`0.2x` to `4.0x`) and touch area height.
 - Respect the current auth-aware navigation behavior:
   - authorized devices default to the touch tab
   - unauthorized devices default to the settings tab
 - Maintain mobile-first behavior and avoid layouts that block touch interactions.
 - Keep selection disabled on control surfaces unless text entry requires it.
+- Keep the current touch gesture behavior consistent unless the task explicitly changes it:
+  - single-finger drag moves the pointer
+  - double tap triggers double click
+  - two-finger gesture sends axis-locked scroll using the dominant direction
+  - two-finger scroll reuses the current sensitivity multiplier
 
 ## CSS Conventions
 
@@ -195,6 +201,7 @@ node --check public/host.js
 - For frontend-only JS changes, run `node --check public/app.js` and `node --check public/host.js`.
 - For server entry or startup changes, run `node --check server.js`.
 - If you add a new WebSocket flow, add at least one test covering success or rejection behavior.
+- If you change scroll behavior, keep horizontal and vertical handling covered by tests.
 
 ## Agent Guidance
 

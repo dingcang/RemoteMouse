@@ -63,6 +63,35 @@ test("absolute mouse moves are clamped to screen bounds", async () => {
   assert.deepEqual(positions, [[1440, 0]]);
 });
 
+test("scroll actions support horizontal and vertical axes", async () => {
+  const calls = [];
+  const controlApi = createControlApi({
+    mouse: {
+      async scrollLeft(amount) {
+        calls.push(["scrollLeft", amount]);
+      },
+      async scrollRight(amount) {
+        calls.push(["scrollRight", amount]);
+      },
+      async scrollDown(amount) {
+        calls.push(["scrollDown", amount]);
+      },
+      async scrollUp(amount) {
+        calls.push(["scrollUp", amount]);
+      }
+    },
+    keyboard: {},
+    screen: { async width() { return 0; }, async height() { return 0; } }
+  });
+
+  await handleAction({ type: "scroll", dx: 4, dy: -3 }, controlApi);
+
+  assert.deepEqual(calls, [
+    ["scrollRight", 4],
+    ["scrollUp", 3]
+  ]);
+});
+
 test("unauthorized clients cannot send control actions", async () => {
   const trustedStorePath = createTrustedStorePath("unauthorized");
   const runtime = createRemoteMouseServer({

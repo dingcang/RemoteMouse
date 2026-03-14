@@ -52,12 +52,20 @@ export function createControlApi(deps = {}) {
 
       await mouseApi.click(button);
     },
-    async scroll(deltaY) {
-      const amount = Math.round(deltaY);
-      if (amount > 0) {
-        await mouseApi.scrollDown(amount);
-      } else if (amount < 0) {
-        await mouseApi.scrollUp(Math.abs(amount));
+    async scroll(deltaX, deltaY) {
+      const horizontalAmount = Math.round(deltaX);
+      const verticalAmount = Math.round(deltaY);
+
+      if (horizontalAmount > 0) {
+        await mouseApi.scrollRight(horizontalAmount);
+      } else if (horizontalAmount < 0) {
+        await mouseApi.scrollLeft(Math.abs(horizontalAmount));
+      }
+
+      if (verticalAmount > 0) {
+        await mouseApi.scrollDown(verticalAmount);
+      } else if (verticalAmount < 0) {
+        await mouseApi.scrollUp(Math.abs(verticalAmount));
       }
     },
     async type(text) {
@@ -367,7 +375,7 @@ export async function handleAction(payload, controlApi = createControlApi()) {
       await controlApi.click(toButton(payload.button), Boolean(payload.double));
       return;
     case "scroll":
-      await controlApi.scroll(Number(payload.dy || 0));
+      await controlApi.scroll(Number(payload.dx || 0), Number(payload.dy || 0));
       return;
     case "type":
       await controlApi.type(String(payload.text || ""));

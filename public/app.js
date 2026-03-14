@@ -27,7 +27,6 @@ const sensitivityDefault = 1.3;
 const touchpadSizeMin = 32;
 const touchpadSizeMax = 68;
 const touchpadSizeDefault = 44;
-const touchNoiseThreshold = 0.01;
 
 let socket;
 let wsUrl = "";
@@ -36,6 +35,7 @@ let lastTap = 0;
 let lastTouchCenter = null;
 let authorized = false;
 let trustedToken = localStorage.getItem(trustedTokenKey) || "";
+let pointerRemainder = { x: 0, y: 0 };
 
 bootstrap();
 
@@ -212,15 +212,33 @@ function send(payload) {
   }
 }
 
-function sendMove(dx, dy) {
-  const nextDx = Math.round(dx);
-  const nextDy = Math.round(dy);
+function sendMove(dx, dy, remainder = pointerRemainder) {
+  remainder.x += dx;
+  remainder.y += dy;
 
-  if (Math.abs(nextDx) <= touchNoiseThreshold && Math.abs(nextDy) <= touchNoiseThreshold) {
+  const nextDx = takeWholePixels(remainder.x);
+  const nextDy = takeWholePixels(remainder.y);
+
+  remainder.x -= nextDx;
+  remainder.y -= nextDy;
+
+  if (nextDx === 0 && nextDy === 0) {
     return;
   }
 
   send({ type: "move", dx: nextDx, dy: nextDy });
+}
+
+function takeWholePixels(value) {
+  if (value > 0) {
+    return Math.floor(value);
+  }
+
+  if (value < 0) {
+    return Math.ceil(value);
+  }
+
+  return 0;
 }
 
 tabButtons.forEach((button) => {
@@ -280,7 +298,7 @@ touchpad.addEventListener("pointermove", (event) => {
   const dx = (event.clientX - lastPoint.x) * scale;
   const dy = (event.clientY - lastPoint.y) * scale;
   lastPoint = { x: event.clientX, y: event.clientY };
-  sendMove(dx, dy);
+  sendMove(dx, dy, pointerRemainder);
 });
 
 touchpad.addEventListener("pointerup", (event) => {
@@ -320,14 +338,22 @@ touchpad.addEventListener("touchmove", (event) => {
     const dx = (touch.clientX - lastPoint.x) * scale;
     const dy = (touch.clientY - lastPoint.y) * scale;
     lastPoint = { x: touch.clientX, y: touch.clientY };
-    sendMove(dx, dy);
+    sendMove(dx, dy, pointerRemainder);
     return;
   }
 
   if (event.touches.length === 2) {
     const center = getTouchCenter(event.touches);
     if (lastTouchCenter) {
-      send({ type: "scroll", dy: Math.round((center.y - lastTouchCenter.y) * 1.6) });
+      const scale = getSensitivityScale();
+      const dx = (center.x - lastTouchCenter.x) * scale;
+      const dy = (center.y - lastTouchCenter.y) * scale;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        send({ type: "scroll", dx: Math.round(dx * 1.6), dy: 0 });
+      } else {
+        send({ type: "scroll", dx: 0, dy: Math.round(dy * 1.6) });
+      }
     }
     lastTouchCenter = center;
   }
