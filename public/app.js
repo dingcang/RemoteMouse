@@ -21,6 +21,13 @@ const tabPanels = Array.from(document.querySelectorAll("[data-tab-panel]"));
 const trustedTokenKey = "remote-mouse-trusted-token";
 const sensitivityKey = "remote-mouse-sensitivity";
 const touchpadSizeKey = "remote-mouse-touchpad-size";
+const sensitivityMin = 0.2;
+const sensitivityMax = 4;
+const sensitivityDefault = 1.3;
+const touchpadSizeMin = 32;
+const touchpadSizeMax = 68;
+const touchpadSizeDefault = 44;
+const touchNoiseThreshold = 0.01;
 
 let socket;
 let wsUrl = "";
@@ -148,31 +155,51 @@ function setActiveTab(tabName) {
 }
 
 function applyStoredSettings() {
-  const storedSensitivity = localStorage.getItem(sensitivityKey);
-  const storedTouchpadSize = localStorage.getItem(touchpadSizeKey);
+  sensitivity.value = String(getClampedNumber(
+    localStorage.getItem(sensitivityKey),
+    sensitivityMin,
+    sensitivityMax,
+    sensitivityDefault
+  ));
 
-  if (storedSensitivity) {
-    sensitivity.value = storedSensitivity;
-  }
-
-  if (storedTouchpadSize) {
-    touchpadSize.value = storedTouchpadSize;
-  }
+  touchpadSize.value = String(getClampedNumber(
+    localStorage.getItem(touchpadSizeKey),
+    touchpadSizeMin,
+    touchpadSizeMax,
+    touchpadSizeDefault
+  ));
 
   updateSensitivityDisplay();
   updateTouchpadSizeDisplay();
 }
 
 function updateSensitivityDisplay() {
-  const value = `${Number(sensitivity.value).toFixed(1)}x`;
+  const value = `${getSensitivityScale().toFixed(1)}x`;
   sensitivityValue.textContent = value;
   sensitivitySettingValue.textContent = value;
 }
 
 function updateTouchpadSizeDisplay() {
-  const value = `${touchpadSize.value}vh`;
+  const value = `${getClampedNumber(touchpadSize.value, touchpadSizeMin, touchpadSizeMax, touchpadSizeDefault)}vh`;
   touchpadSizeValue.textContent = value;
   document.documentElement.style.setProperty("--touchpad-height", value);
+}
+
+function getSensitivityScale() {
+  return getClampedNumber(sensitivity.value, sensitivityMin, sensitivityMax, sensitivityDefault);
+}
+
+function getClampedNumber(value, min, max, fallback) {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, numericValue));
 }
 
 function send(payload) {
@@ -183,6 +210,17 @@ function send(payload) {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(payload));
   }
+}
+
+function sendMove(dx, dy) {
+  const nextDx = Math.round(dx);
+  const nextDy = Math.round(dy);
+
+  if (Math.abs(nextDx) <= touchNoiseThreshold && Math.abs(nextDy) <= touchNoiseThreshold) {
+    return;
+  }
+
+  send({ type: "move", dx: nextDx, dy: nextDy });
 }
 
 tabButtons.forEach((button) => {
@@ -221,23 +259,35 @@ pairButton.addEventListener("click", () => {
 });
 
 touchpad.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "touch") {
+    return;
+  }
+
   touchpad.setPointerCapture(event.pointerId);
   lastPoint = { x: event.clientX, y: event.clientY };
 });
 
 touchpad.addEventListener("pointermove", (event) => {
+  if (event.pointerType === "touch") {
+    return;
+  }
+
   if (!lastPoint || event.pointerType === "mouse" && event.buttons === 0) {
     return;
   }
 
-  const scale = Number(sensitivity.value || 1.3);
+  const scale = getSensitivityScale();
   const dx = (event.clientX - lastPoint.x) * scale;
   const dy = (event.clientY - lastPoint.y) * scale;
   lastPoint = { x: event.clientX, y: event.clientY };
-  send({ type: "move", dx, dy });
+  sendMove(dx, dy);
 });
 
 touchpad.addEventListener("pointerup", (event) => {
+  if (event.pointerType === "touch") {
+    return;
+  }
+
   const now = Date.now();
   if (now - lastTap < 260) {
     send({ type: "click", button: "left", double: true });
@@ -266,11 +316,11 @@ touchpad.addEventListener("touchmove", (event) => {
   event.preventDefault();
   if (event.touches.length === 1 && lastPoint) {
     const touch = event.touches[0];
-    const scale = Number(sensitivity.value || 1.3);
+    const scale = getSensitivityScale();
     const dx = (touch.clientX - lastPoint.x) * scale;
     const dy = (touch.clientY - lastPoint.y) * scale;
     lastPoint = { x: touch.clientX, y: touch.clientY };
-    send({ type: "move", dx, dy });
+    sendMove(dx, dy);
     return;
   }
 
